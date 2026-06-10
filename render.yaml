@@ -1,0 +1,30 @@
+services:
+  - type: worker
+    name: iot-water-filter-bridge
+    runtime: node
+    plan: starter
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: MQTT_BROKER_URL
+        sync: false
+      - key: MQTT_USERNAME
+        sync: false
+      - key: MQTT_PASSWORD
+        sync: false
+      - key: MQTT_TOPIC
+        sync: false
+      - key: MQTT_CLIENT_ID
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      - key: FIREBASE_DATABASE_URL
+        sync: false
+      - key: MQTT_PROTOCOL_VERSION
+        value: "4"
+      - key: MQTT_KEEPALIVE
+        value: "60"
+      - key: MQTT_REJECT_UNAUTHORIZED
+        value: "true"

@@ -1,0 +1,4 @@
+node_modules
+.env
+firebase-service-account.json
+wfproject-90212-firebase-adminsdk-fbsvc-fd8ff2392f.json

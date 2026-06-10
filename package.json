@@ -1,0 +1,28 @@
+{
+  "name": "iot-water-filter-bridge",
+  "version": "1.0.0",
+  "description": "MQTT to Firebase Realtime Database bridge for an IoT smart water filter health monitoring system.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js",
+    "publish:test": "node mqtt-publish-test.js"
+  },
+  "keywords": [
+    "mqtt",
+    "hivemq",
+    "firebase",
+    "iot",
+    "bridge"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "firebase-admin": "^13.0.2",
+    "mqtt": "^5.10.3"
+  }
+}
