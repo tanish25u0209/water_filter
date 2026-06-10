@@ -18,7 +18,7 @@ services:
         sync: false
       - key: MQTT_CLIENT_ID
         sync: false
-      - key: FIREBASE_SERVICE_ACCOUNT
+      - key: FIREBASE_SERVICE_ACCOUNT_BASE64
         sync: false
       - key: FIREBASE_DATABASE_URL
         sync: false

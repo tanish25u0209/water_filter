@@ -10,6 +10,7 @@ const {
   MQTT_PASSWORD,
   MQTT_TOPIC = 'water/device1/data',
   FIREBASE_SERVICE_ACCOUNT,
+  FIREBASE_SERVICE_ACCOUNT_BASE64,
   FIREBASE_DATABASE_URL,
   MQTT_CLIENT_ID,
   MQTT_PROTOCOL_VERSION = '4',
@@ -29,8 +30,10 @@ if (!MQTT_PASSWORD) {
   throw new Error('Missing required environment variable: MQTT_PASSWORD');
 }
 
-if (!FIREBASE_SERVICE_ACCOUNT) {
-  throw new Error('Missing required environment variable: FIREBASE_SERVICE_ACCOUNT');
+if (!FIREBASE_SERVICE_ACCOUNT && !FIREBASE_SERVICE_ACCOUNT_BASE64) {
+  throw new Error(
+    'Missing required environment variable: FIREBASE_SERVICE_ACCOUNT or FIREBASE_SERVICE_ACCOUNT_BASE64'
+  );
 }
 
 if (!FIREBASE_DATABASE_URL) {
@@ -51,6 +54,16 @@ function loadServiceAccount(rawValue) {
   throw new Error(
     'FIREBASE_SERVICE_ACCOUNT must be a JSON string or a valid file path to a service account JSON file.'
   );
+}
+
+function loadServiceAccountFromEnvironment() {
+  if (FIREBASE_SERVICE_ACCOUNT_BASE64) {
+    const decodedValue = Buffer.from(FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8');
+
+    return JSON.parse(decodedValue);
+  }
+
+  return loadServiceAccount(FIREBASE_SERVICE_ACCOUNT);
 }
 
 function normalizeNumber(value, fieldName) {
@@ -102,7 +115,7 @@ function createLogger() {
 const logger = createLogger();
 
 function initializeFirebase() {
-  const serviceAccount = loadServiceAccount(FIREBASE_SERVICE_ACCOUNT);
+  const serviceAccount = loadServiceAccountFromEnvironment();
 
   if (!admin.apps.length) {
     admin.initializeApp({
