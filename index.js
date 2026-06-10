@@ -179,15 +179,25 @@ function buildMqttClient() {
     }
 
     try {
-      // Write a single latest snapshot for the dashboard.
       const sensorData = parseSensorPayload(message);
-      const record = {
+
+      // Write latest snapshot (overwrites previous)
+      const latestRecord = {
         ...sensorData,
         timestamp: admin.database.ServerValue.TIMESTAMP,
       };
 
-      await deviceRef.update(record);
-      logger.info('Firebase updated for device1', sensorData);
+      await deviceRef.child('latest').set(latestRecord);
+
+      // Append to history (keeps all readings)
+      const historyRecord = {
+        ...sensorData,
+        timestamp: Date.now(),
+      };
+
+      await deviceRef.child('history').push(historyRecord);
+
+      logger.info('Firebase updated for device1 (latest and history)', sensorData);
     } catch (error) {
       logger.error(`Failed to process MQTT message from ${topic}: ${error.message}`);
     }
