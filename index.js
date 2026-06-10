@@ -132,16 +132,17 @@ const deviceRef = database.ref('device1');
 
 function buildMqttClient() {
   // mqtt reconnectPeriod keeps the client trying to recover without extra logic.
+  // Single client instance with optimized reconnect stability.
   const client = mqtt.connect(MQTT_BROKER_URL, {
     username: MQTT_USERNAME,
     password: MQTT_PASSWORD,
     clientId: MQTT_CLIENT_ID || `water-filter-bridge-${Date.now()}`,
     protocolVersion: Number(MQTT_PROTOCOL_VERSION),
-    reconnectPeriod: 5000,
+    reconnectPeriod: 2000,
     connectTimeout: 30_000,
     clean: true,
     rejectUnauthorized: MQTT_REJECT_UNAUTHORIZED !== 'false',
-    keepalive: Number(MQTT_KEEPALIVE),
+    keepalive: 30,
   });
 
   client.on('connect', () => {
