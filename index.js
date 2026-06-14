@@ -3,6 +3,7 @@ require('dotenv').config();
 const fs = require('fs');
 const mqtt = require('mqtt');
 const admin = require('firebase-admin');
+const express = require('express');
 
 const {
   MQTT_BROKER_URL,
@@ -219,33 +220,59 @@ logger.info('Bridge configuration loaded', {
 
 const client = buildMqttClient();
 
-async function shutdown(signal) {
-  logger.info(`Received ${signal}. Shutting down bridge...`);
+// Create Express server - keeps Render service alive
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+  res.status(200).send('MQTT Bridge Running');
+});
+
+app.get('/health', (req, res) => {
+  const isConnected = client.connected;
+  res.status(200).json({
+    status: 'running',
+    mqtt_connected: isConnected,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+const server = app.listen(PORT, () => {
+  logger.info(`Express server listening on port ${PORT}`);
+});
+
+// Graceful shutdown: close MQTT but keep Express running
+async function gracefulMqttShutdown(signal) {
+  logger.info(`Received ${signal}. Gracefully closing MQTT connection...`);
 
   try {
     await new Promise((resolve) => client.end(false, {}, resolve));
+    logger.info('MQTT client closed');
   } catch (error) {
     logger.error('Error while closing MQTT client', error);
   }
 
-  process.exit(0);
+  logger.info('Express server remains running. Process will not exit.');
 }
 
 process.on('SIGINT', () => {
-  void shutdown('SIGINT');
+  void gracefulMqttShutdown('SIGINT');
 });
 
 process.on('SIGTERM', () => {
-  void shutdown('SIGTERM');
+  void gracefulMqttShutdown('SIGTERM');
 });
 
+// Log unhandled rejections but don't crash
 process.on('unhandledRejection', (reason) => {
   logger.error('Unhandled promise rejection', reason);
+  logger.info('Process continues running...');
 });
 
+// Log uncaught exceptions but don't crash
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught exception', error);
-  process.exit(1);
+  logger.info('Process continues running...');
 });
 
 logger.info('MQTT to Firebase bridge started');
