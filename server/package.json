@@ -1,0 +1,31 @@
+{
+  "name": "virtual-sensor-generator-backend",
+  "version": "1.0.0",
+  "description": "Node.js + Express bridge between HiveMQ MQTT, manual sensor input from the dashboard, and Firebase Realtime Database for the Virtual Sensor Generator project.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js",
+    "publish:test": "node mqtt-publish-test.js"
+  },
+  "keywords": [
+    "mqtt",
+    "hivemq",
+    "firebase",
+    "iot",
+    "express",
+    "bridge"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^13.0.2",
+    "mqtt": "^5.10.3"
+  }
+}
