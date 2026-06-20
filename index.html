@@ -452,6 +452,7 @@ const DEVICE_PATH = "device1"; // for reference only — the backend owns this s
    STATE
    ============================================================ */
 let latestTemp = null;
+let manualTempValue = "";
 let manualMode = false;
 let autoSendInterval = null;
 let lastSeenTimestamp = null;
@@ -511,7 +512,7 @@ function clearPendingUpdate() {
 
 function saveManualValues() {
   const manualValues = {
-    temperature: tempManualInput?.value ?? "",
+    temperature: tempManualInput?.value ?? manualTempValue ?? "",
     input_tds: tdsInEl?.value ?? "",
     output_tds: tdsOutEl?.value ?? "",
     flow: flowEl?.value ?? "",
@@ -636,6 +637,7 @@ const flowEl = document.getElementById("flow");
 const savedManualValues = loadManualValues();
 
 if (savedManualValues) {
+  if (savedManualValues.temperature !== undefined && savedManualValues.temperature !== "") manualTempValue = savedManualValues.temperature;
   if (savedManualValues.input_tds !== undefined && savedManualValues.input_tds !== "") tdsInEl.value = savedManualValues.input_tds;
   if (savedManualValues.output_tds !== undefined && savedManualValues.output_tds !== "") tdsOutEl.value = savedManualValues.output_tds;
   if (savedManualValues.flow !== undefined && savedManualValues.flow !== "") flowEl.value = savedManualValues.flow;
@@ -706,9 +708,16 @@ const labelTempManual = document.getElementById("label-temp-manual");
 function stepTemp(amount) {
   let v = (parseFloat(tempManualInput.value) || 0) + amount;
   tempManualInput.value = Math.round(v * 10) / 10;
+  manualTempValue = tempManualInput.value;
+  saveManualValues();
 }
 document.getElementById("temp-inc").onclick = () => stepTemp(0.1);
 document.getElementById("temp-dec").onclick = () => stepTemp(-0.1);
+
+tempManualInput.addEventListener("input", () => {
+  manualTempValue = tempManualInput.value;
+  saveManualValues();
+});
 
 document.getElementById("temp-mode").addEventListener("change", (e) => {
   manualMode = e.target.checked;
@@ -717,10 +726,14 @@ document.getElementById("temp-mode").addEventListener("change", (e) => {
   labelTempLive.classList.toggle("active", !manualMode);
   labelTempManual.classList.toggle("active", manualMode);
   if (manualMode) {
-    // seed the manual field with the last known live reading, if any
-    if (latestTemp !== null) tempManualInput.value = latestTemp;
+    // keep manual temperature sticky instead of re-seeding from live data every time
+    if (tempManualInput.value === "") {
+      if (manualTempValue !== "") tempManualInput.value = manualTempValue;
+      else if (latestTemp !== null) tempManualInput.value = latestTemp;
+    }
+    manualTempValue = tempManualInput.value;
   } else {
-    // snap the readout back to whatever MQTT last reported
+    // return the display to the last live MQTT reading without touching manual input
     document.getElementById("temp-value").innerHTML =
       (latestTemp !== null ? latestTemp.toFixed(1) : "—") + ' <span class="unit">°C</span>';
   }
@@ -828,7 +841,7 @@ function buildPayload() {
   // Only include a temperature override when Manual Temperature mode is on -
   // otherwise the backend uses its own latest MQTT reading.
   if (manualMode) {
-    payload.temperature = parseFloat(tempManualInput.value) || 0;
+    payload.temperature = parseFloat(tempManualInput.value || manualTempValue) || 0;
   }
   return payload;
 }
@@ -875,6 +888,9 @@ async function sendToBackend() {
   btn.disabled = true;
   manualSubmitInFlight = true;
   try {
+    if (manualMode && tempManualInput.value !== "") {
+      manualTempValue = tempManualInput.value;
+    }
     const data = await postPayload(payload);
 
     if (typeof data.timestamp === "number") lastSeenTimestamp = data.timestamp;
