@@ -118,6 +118,11 @@ function connectMqtt() {
         return;
       }
 
+      if (field !== 'temperature' && payload[field] === 0) {
+        logger.warn(`Ignoring MQTT field - zero "${field}" value`);
+        return;
+      }
+
       liveUpdates[field] = payload[field];
     });
 

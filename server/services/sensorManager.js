@@ -102,9 +102,11 @@ function buildCombinedRecord({ input_tds, output_tds, flow, temperature } = {}) 
   if (output_tds !== undefined) state.manual.output_tds = output_tds;
   if (flow !== undefined) state.manual.flow = flow;
 
-  const finalInputTds = input_tds ?? state.live.input_tds ?? state.manual.input_tds ?? 0;
-  const finalOutputTds = output_tds ?? state.live.output_tds ?? state.manual.output_tds ?? 0;
-  const finalFlow = flow ?? state.live.flow ?? state.manual.flow ?? 0;
+  // Manual dashboard values should win over stale live MQTT values when Auto Mode
+  // reuses the current snapshot between explicit POST /api/update calls.
+  const finalInputTds = input_tds ?? state.manual.input_tds ?? state.live.input_tds ?? 0;
+  const finalOutputTds = output_tds ?? state.manual.output_tds ?? state.live.output_tds ?? 0;
+  const finalFlow = flow ?? state.manual.flow ?? state.live.flow ?? 0;
   const finalTemperature = temperature !== undefined ? temperature : state.live.temperature ?? null;
 
   const record = {

@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Virtual Sensor Generator</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- No MQTT or Firebase SDKs loaded in the browser anymore.
+     This dashboard only talks to the Node backend over fetch();
+     the backend is the only thing that holds MQTT/Firebase credentials. -->
+
+<style>
+  :root{
+    --bg-0:#050a16;
+    --bg-1:#0a1530;
+    --bg-2:#0e1c3d;
+    --glass:rgba(255,255,255,0.045);
+    --glass-border:rgba(255,255,255,0.09);
+    --cyan:#3ddcf0;
+    --blue:#5b8def;
+    --green:#3ddc97;
+    --amber:#f0b93d;
+    --red:#f0563d;
+    --text-0:#eef2fb;
+    --text-1:#9aa8c7;
+    --text-2:#5d6a8a;
+    --mono:'JetBrains Mono', monospace;
+    --sans:'Space Grotesk', sans-serif;
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+
+  body{
+    background:
+      radial-gradient(circle at 15% 0%, rgba(91,141,239,0.16), transparent 45%),
+      radial-gradient(circle at 85% 20%, rgba(61,220,240,0.10), transparent 40%),
+      linear-gradient(180deg, var(--bg-0), var(--bg-1) 40%, var(--bg-0));
+    color:var(--text-0);
+    font-family:var(--sans);
+    min-height:100vh;
+    padding:28px 18px 60px;
+  }
+
+  .wrap{max-width:1280px; margin:0 auto;}
+
+  /* ---------- Pipeline signature ---------- */
+  .pipeline{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:6px; overflow-x:auto;
+    padding:14px 18px;
+    border-radius:16px;
+    background:var(--glass);
+    border:1px solid var(--glass-border);
+    backdrop-filter:blur(14px);
+    margin-bottom:22px;
+    font-family:var(--mono);
+    font-size:11.5px;
+    letter-spacing:0.04em;
+    color:var(--text-1);
+  }
+  .pipe-node{
+    display:flex; align-items:center; gap:6px;
+    white-space:nowrap;
+    padding:6px 10px;
+    border-radius:999px;
+    background:rgba(255,255,255,0.03);
+    border:1px solid rgba(255,255,255,0.06);
+  }
+  .pipe-node.active{ color:var(--cyan); border-color:rgba(61,220,240,0.35); background:rgba(61,220,240,0.07); }
+  .pipe-dot{width:6px; height:6px; border-radius:50%; background:var(--text-2); flex:none;}
+  .pipe-node.active .pipe-dot{ background:var(--cyan); box-shadow:0 0 8px var(--cyan); }
+  .pipe-track{
+    position:relative; flex:1; height:2px; min-width:24px;
+    background:linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.08));
+    margin:0 2px; overflow:hidden; border-radius:2px;
+  }
+  .pipe-track::after{
+    content:''; position:absolute; top:0; left:-30%; width:30%; height:100%;
+    background:linear-gradient(90deg, transparent, var(--cyan), transparent);
+    animation:flow 2.4s linear infinite;
+  }
+  @keyframes flow{ to{ left:130%; } }
+
+  /* ---------- Header ---------- */
+  header{
+    display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between;
+    gap:16px; margin-bottom:26px;
+  }
+  h1{
+    font-size:clamp(26px, 3.4vw, 38px);
+    font-weight:700; letter-spacing:-0.01em;
+  }
+  h1 span{ color:var(--cyan); }
+  .subtitle{ color:var(--text-1); font-size:13.5px; margin-top:4px; }
+
+  .status-row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .badge{
+    display:flex; align-items:center; gap:7px;
+    font-family:var(--mono); font-size:12px;
+    padding:7px 13px; border-radius:999px;
+    background:var(--glass); border:1px solid var(--glass-border);
+    backdrop-filter:blur(10px);
+    color:var(--text-1);
+  }
+  .dot{width:8px; height:8px; border-radius:50%; background:var(--text-2); flex:none;}
+  .dot.ok{ background:var(--green); box-shadow:0 0 8px var(--green); }
+  .dot.bad{ background:var(--red); box-shadow:0 0 8px var(--red); }
+  .dot.wait{ background:var(--amber); box-shadow:0 0 8px var(--amber); animation:pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse{ 50%{ opacity:0.35; } }
+
+  /* ---------- Grid / Cards ---------- */
+  .grid{ display:grid; gap:16px; margin-bottom:18px; }
+  .grid-main{ grid-template-columns: 1.1fr 1fr 1fr 1fr 0.9fr; }
+  @media (max-width:1100px){ .grid-main{ grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width:620px){ .grid-main{ grid-template-columns: 1fr; } }
+
+  .card{
+    background:var(--glass);
+    border:1px solid var(--glass-border);
+    backdrop-filter:blur(16px);
+    border-radius:18px;
+    padding:20px;
+    position:relative;
+    overflow:hidden;
+    transition:border-color .25s ease, transform .25s ease;
+  }
+  .card::before{
+    content:''; position:absolute; inset:0; border-radius:18px; pointer-events:none;
+    background:linear-gradient(135deg, rgba(255,255,255,0.05), transparent 40%);
+  }
+  .card:hover{ border-color:rgba(255,255,255,0.16); }
+
+  .card-label{
+    font-family:var(--mono); font-size:11px; letter-spacing:0.08em; text-transform:uppercase;
+    color:var(--text-1); margin-bottom:10px;
+  }
+  .card-value{
+    font-family:var(--mono); font-weight:600; font-size:34px; line-height:1;
+    color:var(--text-0);
+  }
+  .card-value .unit{ font-size:16px; color:var(--text-1); margin-left:4px; font-weight:500; }
+  .card-tag{
+    display:inline-block; margin-top:10px; font-size:11px; font-family:var(--mono);
+    color:var(--cyan); background:rgba(61,220,240,0.08); border:1px solid rgba(61,220,240,0.25);
+    padding:3px 9px; border-radius:999px;
+  }
+
+  .temp-card .card-value{ color:var(--cyan); }
+  .tag-manual{
+    color:var(--amber); background:rgba(240,185,61,0.08); border-color:rgba(240,185,61,0.25);
+  }
+
+  /* number stepper */
+  .stepper{ display:flex; align-items:center; gap:10px; margin-top:6px; }
+  .stepper button{
+    width:34px; height:34px; border-radius:10px; border:1px solid var(--glass-border);
+    background:rgba(255,255,255,0.04); color:var(--text-0); font-size:18px; cursor:pointer;
+    transition:background .2s ease, transform .15s ease;
+    font-family:var(--mono); flex:none;
+  }
+  .stepper button:hover{ background:rgba(255,255,255,0.09); }
+  .stepper button:active{ transform:scale(0.93); }
+  .stepper-value{
+    flex:1; display:flex; align-items:baseline; justify-content:center; gap:6px; min-width:0;
+  }
+  .stepper input{
+    width:auto; max-width:100%; text-align:right;
+    background:transparent; border:none; outline:none;
+    color:var(--text-0); font-family:var(--mono); font-size:34px; font-weight:600;
+  }
+  .stepper input[readonly]{ cursor:default; caret-color:transparent; }
+  .stepper input::placeholder{ color:var(--text-0); opacity:1; }
+  .stepper-value .unit{ font-size:16px; color:var(--text-1); font-weight:500; }
+  .stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button{ -webkit-appearance:none; }
+  .stepper input{ -moz-appearance:textfield; }
+
+  /* ---------- Actions ---------- */
+  .actions{
+    display:flex; flex-wrap:wrap; align-items:center; gap:16px; margin-bottom:26px;
+  }
+  .btn-send{
+    font-family:var(--sans); font-weight:600; font-size:15px;
+    color:#04101f; background:linear-gradient(135deg, var(--cyan), var(--blue));
+    border:none; padding:15px 28px; border-radius:14px; cursor:pointer;
+    box-shadow:0 10px 30px -10px rgba(61,220,240,0.45);
+    transition:transform .15s ease, box-shadow .2s ease;
+  }
+  .btn-send:hover{ transform:translateY(-2px); box-shadow:0 14px 34px -8px rgba(61,220,240,0.55); }
+  .btn-send:active{ transform:translateY(0); }
+  .btn-send:disabled{ opacity:0.5; cursor:not-allowed; transform:none; }
+
+  .switch-wrap{
+    display:flex; align-items:center; gap:10px;
+    font-family:var(--mono); font-size:13px; color:var(--text-1);
+    background:var(--glass); border:1px solid var(--glass-border);
+    padding:11px 16px; border-radius:14px; backdrop-filter:blur(10px);
+  }
+  .switch{ position:relative; width:42px; height:24px; flex:none; }
+  .switch input{ opacity:0; width:0; height:0; }
+  .slider{
+    position:absolute; inset:0; background:rgba(255,255,255,0.12); border-radius:999px;
+    transition:.25s; cursor:pointer;
+  }
+  .slider::before{
+    content:''; position:absolute; width:18px; height:18px; left:3px; top:3px;
+    background:#fff; border-radius:50%; transition:.25s;
+  }
+  .switch input:checked + .slider{ background:var(--green); }
+  .switch input:checked + .slider::before{ transform:translateX(18px); }
+
+  .last-update{ font-family:var(--mono); font-size:12px; color:var(--text-2); margin-left:auto; }
+
+  /* ---------- Section titles ---------- */
+  .section-title{
+    font-family:var(--mono); font-size:12px; letter-spacing:0.1em; text-transform:uppercase;
+    color:var(--text-1); margin:30px 0 14px; display:flex; align-items:center; gap:10px;
+  }
+  .section-title::after{ content:''; flex:1; height:1px; background:var(--glass-border); }
+
+  /* ---------- Presets ---------- */
+  .presets-row{ display:flex; flex-wrap:wrap; gap:12px; margin-bottom:26px; }
+  .preset-btn{
+    font-family:var(--mono); font-size:12.5px; font-weight:600;
+    color:var(--text-0); background:var(--glass); border:1px solid var(--glass-border);
+    padding:12px 18px; border-radius:14px; cursor:pointer; backdrop-filter:blur(10px);
+    display:flex; align-items:center; gap:9px;
+    transition:transform .15s ease, border-color .2s ease, background .2s ease;
+  }
+  .preset-btn:hover{ transform:translateY(-2px); border-color:rgba(255,255,255,0.2); }
+  .preset-btn:active{ transform:translateY(0); }
+  .preset-dot{ width:9px; height:9px; border-radius:50%; flex:none; }
+  .preset-btn.safe .preset-dot{ background:var(--green); box-shadow:0 0 8px var(--green); }
+  .preset-btn.moderate .preset-dot{ background:var(--amber); box-shadow:0 0 8px var(--amber); }
+  .preset-btn.unsafe .preset-dot{ background:var(--red); box-shadow:0 0 8px var(--red); }
+  .preset-btn.safe:hover{ border-color:rgba(61,220,151,0.4); background:rgba(61,220,151,0.07); }
+  .preset-btn.moderate:hover{ border-color:rgba(240,185,61,0.4); background:rgba(240,185,61,0.07); }
+  .preset-btn.unsafe:hover{ border-color:rgba(240,86,61,0.4); background:rgba(240,86,61,0.07); }
+  .preset-btn.active{ box-shadow:0 0 0 1px currentColor inset; }
+  .preset-btn.safe.active{ border-color:var(--green); background:rgba(61,220,151,0.12); }
+  .preset-btn.moderate.active{ border-color:var(--amber); background:rgba(240,185,61,0.12); }
+  .preset-btn.unsafe.active{ border-color:var(--red); background:rgba(240,86,61,0.12); }
+
+  /* ---------- Per-card live/manual toggle ---------- */
+  .mode-row-compact{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    margin:4px 0 14px;
+  }
+  .mode-label{ font-family:var(--mono); font-size:10.5px; color:var(--text-2); letter-spacing:0.04em; text-transform:uppercase; }
+  .mode-label.active{ color:var(--cyan); }
+  .switch.mini{ width:30px; height:17px; }
+  .switch.mini .slider::before{ width:11px; height:11px; left:3px; top:3px; }
+  .switch.mini input:checked + .slider::before{ transform:translateX(13px); }
+
+  /* ---------- Toasts ---------- */
+  #toast-stack{
+    position:fixed; top:20px; right:20px; display:flex; flex-direction:column; gap:10px; z-index:999;
+  }
+  .toast{
+    font-family:var(--mono); font-size:13px;
+    padding:13px 18px; border-radius:12px;
+    background:rgba(10,21,48,0.92); backdrop-filter:blur(10px);
+    border:1px solid var(--glass-border);
+    box-shadow:0 10px 30px -8px rgba(0,0,0,0.5);
+    display:flex; align-items:center; gap:10px;
+    animation:toast-in .25s ease, toast-out .3s ease 3.2s forwards;
+    min-width:240px;
+  }
+  .toast.ok{ border-color:rgba(61,220,151,0.4); color:var(--green); }
+  .toast.err{ border-color:rgba(240,86,61,0.4); color:var(--red); }
+  @keyframes toast-in{ from{ opacity:0; transform:translateX(20px); } to{ opacity:1; transform:translateX(0); } }
+  @keyframes toast-out{ to{ opacity:0; transform:translateX(20px); } }
+
+  footer{ text-align:center; color:var(--text-2); font-family:var(--mono); font-size:11px; margin-top:40px; }
+
+  @media (prefers-reduced-motion: reduce){
+    .pipe-track::after, .dot.wait{ animation:none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="toast-stack"></div>
+
+<div class="wrap">
+
+  <!-- Pipeline signature -->
+  <div class="pipeline" id="pipeline">
+    <div class="pipe-node"><span class="pipe-dot"></span>ESP32</div>
+    <div class="pipe-track"></div>
+    <div class="pipe-node" id="node-mqtt"><span class="pipe-dot"></span>HiveMQ MQTT</div>
+    <div class="pipe-track"></div>
+    <div class="pipe-node active"><span class="pipe-dot"></span>Node Backend</div>
+    <div class="pipe-track"></div>
+    <div class="pipe-node" id="node-firebase"><span class="pipe-dot"></span>Firebase RTDB</div>
+    <div class="pipe-track"></div>
+    <div class="pipe-node"><span class="pipe-dot"></span>Lovable Dashboard</div>
+  </div>
+
+  <header>
+    <div>
+      <h1>Virtual Sensor <span>Generator</span></h1>
+      <div class="subtitle">device1 · sends manual TDS / Flow input to the Node backend, which combines it with live MQTT temperature and writes to Firebase</div>
+    </div>
+    <div class="status-row">
+      <div class="badge"><span class="dot wait" id="dot-mqtt"></span><span id="txt-mqtt">MQTT Bridge Connecting…</span></div>
+      <div class="badge"><span class="dot wait" id="dot-firebase"></span><span id="txt-firebase">Backend Connecting…</span></div>
+      <div class="badge">⏱ <span id="last-update-badge">—</span></div>
+    </div>
+  </header>
+
+  <!-- Main sensor grid -->
+  <div class="grid grid-main">
+
+    <div class="card temp-card" id="temp-card">
+      <div class="card-label">Temperature</div>
+      <div class="mode-row-compact">
+        <span class="mode-label active" id="label-temp-live">Live</span>
+        <label class="switch mini">
+          <input type="checkbox" id="temp-mode">
+          <span class="slider"></span>
+        </label>
+        <span class="mode-label" id="label-temp-manual">Manual</span>
+      </div>
+      <div id="temp-readonly">
+        <div class="card-value" id="temp-value">— <span class="unit">°C</span></div>
+        <div class="card-tag" id="temp-tag">Live MQTT</div>
+      </div>
+      <div id="temp-manual" style="display:none;">
+        <div class="stepper">
+          <button id="temp-dec">−</button>
+          <span class="stepper-value"><input type="number" id="temp-manual-input" placeholder="—" step="0.1"><span class="unit">°C</span></span>
+          <button id="temp-inc">+</button>
+        </div>
+        <div class="card-tag tag-manual">Manual Control</div>
+      </div>
+    </div>
+
+    <div class="card" id="tdsin-card">
+      <div class="card-label">Input TDS</div>
+      <div class="mode-row-compact">
+        <span class="mode-label" id="label-tdsin-live">Live</span>
+        <label class="switch mini">
+          <input type="checkbox" id="tdsin-mode" checked>
+          <span class="slider"></span>
+        </label>
+        <span class="mode-label active" id="label-tdsin-manual">Manual</span>
+      </div>
+      <div id="tdsin-readonly" style="display:none;">
+        <div class="card-value" id="tdsin-value">— <span class="unit">ppm</span></div>
+        <div class="card-tag">Live MQTT</div>
+      </div>
+      <div id="tdsin-manual">
+        <div class="stepper">
+          <button id="tds-in-dec">−</button>
+          <span class="stepper-value"><input type="number" id="tds-in" placeholder="—" step="1" readonly><span class="unit">ppm</span></span>
+          <button id="tds-in-inc">+</button>
+        </div>
+        <div class="card-tag tag-manual">Manual Control</div>
+      </div>
+    </div>
+
+    <div class="card" id="tdsout-card">
+      <div class="card-label">Output TDS</div>
+      <div class="mode-row-compact">
+        <span class="mode-label" id="label-tdsout-live">Live</span>
+        <label class="switch mini">
+          <input type="checkbox" id="tdsout-mode" checked>
+          <span class="slider"></span>
+        </label>
+        <span class="mode-label active" id="label-tdsout-manual">Manual</span>
+      </div>
+      <div id="tdsout-readonly" style="display:none;">
+        <div class="card-value" id="tdsout-value">— <span class="unit">ppm</span></div>
+        <div class="card-tag">Live MQTT</div>
+      </div>
+      <div id="tdsout-manual">
+        <div class="stepper">
+          <button id="tds-out-dec">−</button>
+          <span class="stepper-value"><input type="number" id="tds-out" placeholder="—" step="1" readonly><span class="unit">ppm</span></span>
+          <button id="tds-out-inc">+</button>
+        </div>
+        <div class="card-tag tag-manual">Manual Control</div>
+      </div>
+    </div>
+
+    <div class="card" id="flow-card">
+      <div class="card-label">Flow Rate</div>
+      <div class="mode-row-compact">
+        <span class="mode-label" id="label-flow-live">Live</span>
+        <label class="switch mini">
+          <input type="checkbox" id="flow-mode" checked>
+          <span class="slider"></span>
+        </label>
+        <span class="mode-label active" id="label-flow-manual">Manual</span>
+      </div>
+      <div id="flow-readonly" style="display:none;">
+        <div class="card-value" id="flow-value">— <span class="unit">L/min</span></div>
+        <div class="card-tag">Live MQTT</div>
+      </div>
+      <div id="flow-manual">
+        <div class="stepper">
+          <button id="flow-dec">−</button>
+          <span class="stepper-value"><input type="number" id="flow" placeholder="—" step="0.1" readonly><span class="unit">L/min</span></span>
+          <button id="flow-inc">+</button>
+        </div>
+        <div class="card-tag tag-manual">Manual Control</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Actions -->
+  <div class="actions">
+    <button class="btn-send" id="btn-send">Send To Firebase</button>
+    <label class="switch-wrap">
+      <span class="switch"><input type="checkbox" id="auto-send"><span class="slider"></span></span>
+      Auto Send Every 5 Seconds
+    </label>
+    <div class="last-update">Last update: <span id="last-update-text">never</span></div>
+  </div>
+
+  <!-- Presets -->
+  <div class="presets-row">
+    <button class="preset-btn safe" id="preset-safe"><span class="preset-dot"></span>Safe Water Preset</button>
+    <button class="preset-btn moderate" id="preset-moderate"><span class="preset-dot"></span>Moderate Water Preset</button>
+    <button class="preset-btn unsafe" id="preset-unsafe"><span class="preset-dot"></span>Unsafe Water Preset</button>
+  </div>
+
+  <footer>Virtual Sensor Generator · admin control panel · talks only to the Node backend, never directly to MQTT or Firebase · does not modify Lovable dashboard schema</footer>
+
+</div>
+
+<script>
+/* ============================================================
+   CONFIG — point this at your deployed backend
+   ============================================================ */
+// Replace with your Render service URL once deployed, e.g.
+//   const BACKEND_URL = "https://virtual-sensor-generator-backend.onrender.com";
+// While developing locally with `npm start` in server/, this default works as-is.
+const BACKEND_URL = "https://water-filter-7qdf.onrender.com";
+
+const POLL_MS = 3000; // how often the dashboard polls the backend for status + latest values
+const PENDING_UPDATE_KEY = "vsg_pending_update";
+const MANUAL_VALUES_KEY = "vsg_manual_values";
+
+const DEVICE_PATH = "device1"; // for reference only — the backend owns this schema now
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let latestTemp = null;
+let manualMode = false;
+let autoSendInterval = null;
+let lastSeenTimestamp = null;
+
+// per-sensor live/manual state — mirrors the temperature toggle for TDS in/out and Flow
+const sensorManualState = { tdsIn: true, tdsOut: true, flow: true };
+const liveValues = { tdsIn: null, tdsOut: null, flow: null };
+let manualSubmitInFlight = false;
+
+/* ============================================================
+   TOASTS
+   ============================================================ */
+function toast(msg, type = "ok") {
+  const stack = document.getElementById("toast-stack");
+  const el = document.createElement("div");
+  el.className = "toast " + type;
+  el.textContent = (type === "ok" ? "✓ " : "⚠ ") + msg;
+  stack.appendChild(el);
+  setTimeout(() => el.remove(), 3600);
+}
+
+/* ============================================================
+   STATUS BADGES
+   ============================================================ */
+function setStatus(which, state, label) {
+  const dot = document.getElementById("dot-" + which);
+  const txt = document.getElementById("txt-" + which);
+  dot.className = "dot " + state;
+  txt.textContent = label;
+  const node = document.getElementById("node-" + which);
+  if (node) node.classList.toggle("active", state === "ok");
+}
+
+function updateLastSeen() {
+  const now = new Date();
+  const str = now.toLocaleTimeString();
+  document.getElementById("last-update-badge").textContent = str;
+  document.getElementById("last-update-text").textContent = str;
+}
+
+function savePendingUpdate(payload) {
+  localStorage.setItem(PENDING_UPDATE_KEY, JSON.stringify(payload));
+}
+
+function loadPendingUpdate() {
+  try {
+    const raw = localStorage.getItem(PENDING_UPDATE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearPendingUpdate() {
+  localStorage.removeItem(PENDING_UPDATE_KEY);
+}
+
+function saveManualValues() {
+  const manualValues = {
+    temperature: tempManualInput?.value ?? "",
+    input_tds: tdsInEl?.value ?? "",
+    output_tds: tdsOutEl?.value ?? "",
+    flow: flowEl?.value ?? "",
+  };
+  localStorage.setItem(MANUAL_VALUES_KEY, JSON.stringify(manualValues));
+}
+
+function loadManualValues() {
+  try {
+    const raw = localStorage.getItem(MANUAL_VALUES_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function shouldAcceptLiveValue(field, value) {
+  if (field === "temperature") return typeof value === "number" && Number.isFinite(value);
+  return typeof value === "number" && Number.isFinite(value) && value !== 0;
+}
+
+/* ============================================================
+   BACKEND CONNECTION
+   The browser never talks to MQTT or Firebase directly anymore.
+   It only polls the Node backend, which holds the real credentials
+   and is responsible for writing to Firebase whenever needed.
+   ============================================================ */
+
+// GET /health -> tells us whether the backend is up and whether its MQTT
+// bridge to HiveMQ is currently connected.
+async function pollHealth() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/health`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const health = await res.json();
+
+    setStatus("firebase", "ok", "Backend Connected");
+    setStatus(
+      "mqtt",
+      health.mqtt_connected ? "ok" : "wait",
+      health.mqtt_connected ? "MQTT Bridge Connected" : "MQTT Bridge Offline"
+    );
+
+    if (loadPendingUpdate()) {
+      void flushPendingUpdate();
+    }
+  } catch (e) {
+    setStatus("firebase", "bad", "Backend Unreachable");
+    setStatus("mqtt", "bad", "MQTT Bridge Unknown");
+  }
+}
+
+// GET /api/latest -> the last combined object the backend wrote to Firebase.
+// Drives every "Live" readout on the dashboard (temperature, and TDS/Flow
+// when their toggles aren't set to Manual).
+async function pollLatest() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/latest`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data) return;
+
+    const live = data.live || {};
+    const pickLive = (field, fallback) => (typeof live[field] === "number" ? live[field] : fallback);
+
+    if (shouldAcceptLiveValue("temperature", pickLive("temperature", data.temperature))) {
+      latestTemp = pickLive("temperature", data.temperature);
+      if (!manualMode) {
+        document.getElementById("temp-value").innerHTML =
+          latestTemp.toFixed(1) + ' <span class="unit">°C</span>';
+      }
+    }
+
+    if (shouldAcceptLiveValue("input_tds", pickLive("input_tds", data.input_tds))) {
+      liveValues.tdsIn = pickLive("input_tds", data.input_tds);
+      if (!sensorManualState.tdsIn) {
+        document.getElementById("tdsin-value").innerHTML =
+          liveValues.tdsIn + ' <span class="unit">ppm</span>';
+      }
+    }
+
+    if (shouldAcceptLiveValue("output_tds", pickLive("output_tds", data.output_tds))) {
+      liveValues.tdsOut = pickLive("output_tds", data.output_tds);
+      if (!sensorManualState.tdsOut) {
+        document.getElementById("tdsout-value").innerHTML =
+          liveValues.tdsOut + ' <span class="unit">ppm</span>';
+      }
+    }
+
+    if (shouldAcceptLiveValue("flow", pickLive("flow", data.flow))) {
+      liveValues.flow = pickLive("flow", data.flow);
+      if (!sensorManualState.flow) {
+        document.getElementById("flow-value").innerHTML =
+          liveValues.flow.toFixed(1) + ' <span class="unit">L/min</span>';
+      }
+    }
+
+    if (typeof data.timestamp === "number" && data.timestamp !== lastSeenTimestamp) {
+      lastSeenTimestamp = data.timestamp;
+      updateLastSeen();
+    }
+
+    if (loadPendingUpdate()) {
+      void flushPendingUpdate();
+    }
+  } catch (e) {
+    // pollHealth() already reflects an unreachable backend in the status badges
+  }
+}
+
+pollHealth();
+pollLatest();
+setInterval(pollHealth, POLL_MS);
+setInterval(pollLatest, POLL_MS);
+
+/* ============================================================
+   MANUAL INPUTS + EFFICIENCY (calculated internally, sent to Firebase, not shown on screen)
+   ============================================================ */
+const tdsInEl = document.getElementById("tds-in");
+const tdsOutEl = document.getElementById("tds-out");
+const flowEl = document.getElementById("flow");
+const savedManualValues = loadManualValues();
+
+if (savedManualValues) {
+  if (savedManualValues.input_tds !== undefined && savedManualValues.input_tds !== "") tdsInEl.value = savedManualValues.input_tds;
+  if (savedManualValues.output_tds !== undefined && savedManualValues.output_tds !== "") tdsOutEl.value = savedManualValues.output_tds;
+  if (savedManualValues.flow !== undefined && savedManualValues.flow !== "") flowEl.value = savedManualValues.flow;
+}
+
+if (!tdsInEl.value) tdsInEl.value = 450;
+if (!tdsOutEl.value) tdsOutEl.value = 30;
+if (!flowEl.value) flowEl.value = 2.5;
+
+function clampNonNegative(el) {
+  if (parseFloat(el.value) < 0 || el.value === "") el.value = 0;
+}
+
+// reads whichever value is "in control" right now — manual stepper, or last live MQTT reading
+function getEffectiveInputTds() {
+  return sensorManualState.tdsIn ? (parseFloat(tdsInEl.value) || 0) : (liveValues.tdsIn ?? 0);
+}
+function getEffectiveOutputTds() {
+  return sensorManualState.tdsOut ? (parseFloat(tdsOutEl.value) || 0) : (liveValues.tdsOut ?? 0);
+}
+function getEffectiveFlow() {
+  return sensorManualState.flow ? (parseFloat(flowEl.value) || 0) : (liveValues.flow ?? 0);
+}
+
+function recalcEfficiency() {
+  const inTds = getEffectiveInputTds();
+  const outTds = getEffectiveOutputTds();
+  let eff = 0;
+  if (inTds > 0) eff = ((inTds - outTds) / inTds) * 100;
+  eff = Math.max(0, Math.min(100, eff));
+  return eff;
+}
+
+function step(el, amount, min = 0) {
+  let v = (parseFloat(el.value) || 0) + amount;
+  if (v < min) v = min;
+  el.value = Number.isInteger(amount) ? Math.round(v) : (Math.round(v * 10) / 10);
+  recalcEfficiency();
+}
+
+document.getElementById("tds-in-inc").onclick = () => step(tdsInEl, 1);
+document.getElementById("tds-in-dec").onclick = () => step(tdsInEl, -1);
+document.getElementById("tds-out-inc").onclick = () => step(tdsOutEl, 1);
+document.getElementById("tds-out-dec").onclick = () => step(tdsOutEl, -1);
+document.getElementById("flow-inc").onclick = () => step(flowEl, 0.1);
+document.getElementById("flow-dec").onclick = () => step(flowEl, -0.1);
+
+[tdsInEl, tdsOutEl, flowEl].forEach((el) => {
+  el.addEventListener("input", () => {
+    clampNonNegative(el);
+    recalcEfficiency();
+    saveManualValues();
+    document.querySelectorAll(".preset-btn").forEach((b) => b.classList.remove("active"));
+  });
+});
+
+recalcEfficiency();
+
+/* ============================================================
+   MANUAL TEMPERATURE MODE
+   ============================================================ */
+const tempManualInput = document.getElementById("temp-manual-input");
+const tempReadonlyEl = document.getElementById("temp-readonly");
+const tempManualEl = document.getElementById("temp-manual");
+const labelTempLive = document.getElementById("label-temp-live");
+const labelTempManual = document.getElementById("label-temp-manual");
+
+function stepTemp(amount) {
+  let v = (parseFloat(tempManualInput.value) || 0) + amount;
+  tempManualInput.value = Math.round(v * 10) / 10;
+}
+document.getElementById("temp-inc").onclick = () => stepTemp(0.1);
+document.getElementById("temp-dec").onclick = () => stepTemp(-0.1);
+
+document.getElementById("temp-mode").addEventListener("change", (e) => {
+  manualMode = e.target.checked;
+  tempReadonlyEl.style.display = manualMode ? "none" : "block";
+  tempManualEl.style.display = manualMode ? "block" : "none";
+  labelTempLive.classList.toggle("active", !manualMode);
+  labelTempManual.classList.toggle("active", manualMode);
+  if (manualMode) {
+    // seed the manual field with the last known live reading, if any
+    if (latestTemp !== null) tempManualInput.value = latestTemp;
+  } else {
+    // snap the readout back to whatever MQTT last reported
+    document.getElementById("temp-value").innerHTML =
+      (latestTemp !== null ? latestTemp.toFixed(1) : "—") + ' <span class="unit">°C</span>';
+  }
+  saveManualValues();
+});
+
+/* ============================================================
+   PER-SENSOR LIVE / MANUAL TOGGLES — Input TDS, Output TDS, Flow
+   ============================================================ */
+function wireSensorToggle(opts) {
+  const { key, checkboxId, readonlyWrapId, manualWrapId, labelLiveId, labelManualId, liveValueId, unit, decimals } = opts;
+  const checkbox = document.getElementById(checkboxId);
+  const readonlyWrap = document.getElementById(readonlyWrapId);
+  const manualWrap = document.getElementById(manualWrapId);
+  const labelLiveEl = document.getElementById(labelLiveId);
+  const labelManualEl = document.getElementById(labelManualId);
+
+  checkbox.addEventListener("change", (e) => {
+    const manual = e.target.checked;
+    sensorManualState[key] = manual;
+    readonlyWrap.style.display = manual ? "none" : "block";
+    manualWrap.style.display = manual ? "block" : "none";
+    labelLiveEl.classList.toggle("active", !manual);
+    labelManualEl.classList.toggle("active", manual);
+    if (!manual) {
+      // snap the readout to whatever was last seen live, if anything
+      const lv = liveValues[key];
+      document.getElementById(liveValueId).innerHTML =
+        (lv !== null ? lv.toFixed(decimals) : "—") + ' <span class="unit">' + unit + '</span>';
+    }
+    recalcEfficiency();
+  });
+}
+
+wireSensorToggle({
+  key: "tdsIn", checkboxId: "tdsin-mode", readonlyWrapId: "tdsin-readonly", manualWrapId: "tdsin-manual",
+  labelLiveId: "label-tdsin-live", labelManualId: "label-tdsin-manual", liveValueId: "tdsin-value",
+  unit: "ppm", decimals: 0,
+});
+wireSensorToggle({
+  key: "tdsOut", checkboxId: "tdsout-mode", readonlyWrapId: "tdsout-readonly", manualWrapId: "tdsout-manual",
+  labelLiveId: "label-tdsout-live", labelManualId: "label-tdsout-manual", liveValueId: "tdsout-value",
+  unit: "ppm", decimals: 0,
+});
+wireSensorToggle({
+  key: "flow", checkboxId: "flow-mode", readonlyWrapId: "flow-readonly", manualWrapId: "flow-manual",
+  labelLiveId: "label-flow-live", labelManualId: "label-flow-manual", liveValueId: "flow-value",
+  unit: "L/min", decimals: 1,
+});
+
+// forces a sensor into manual mode and updates its switch/UI — used by presets
+function forceManual(key, checkboxId, readonlyWrapId, manualWrapId, labelLiveId, labelManualId) {
+  sensorManualState[key] = true;
+  document.getElementById(checkboxId).checked = true;
+  document.getElementById(readonlyWrapId).style.display = "none";
+  document.getElementById(manualWrapId).style.display = "block";
+  document.getElementById(labelLiveId).classList.remove("active");
+  document.getElementById(labelManualId).classList.add("active");
+}
+
+/* ============================================================
+   PRESETS — fixed scenario values, filled into the inputs
+   ============================================================ */
+const PRESETS = {
+  safe:     { input_tds: 450, output_tds: 30,  flow: 2.5, temp: 25 },
+  moderate: { input_tds: 450, output_tds: 120, flow: 1.8, temp: 28 },
+  unsafe:   { input_tds: 450, output_tds: 320, flow: 0.7, temp: 33 },
+};
+
+function applyPreset(name, toastLabel) {
+  const p = PRESETS[name];
+  forceManual("tdsIn", "tdsin-mode", "tdsin-readonly", "tdsin-manual", "label-tdsin-live", "label-tdsin-manual");
+  forceManual("tdsOut", "tdsout-mode", "tdsout-readonly", "tdsout-manual", "label-tdsout-live", "label-tdsout-manual");
+  forceManual("flow", "flow-mode", "flow-readonly", "flow-manual", "label-flow-live", "label-flow-manual");
+  tdsInEl.value = p.input_tds;
+  tdsOutEl.value = p.output_tds;
+  flowEl.value = p.flow;
+  recalcEfficiency();
+  if (manualMode) {
+    tempManualInput.value = p.temp;
+  }
+  saveManualValues();
+  toast(toastLabel + " preset applied — sending continuously", "ok");
+  document.querySelectorAll(".preset-btn").forEach((b) => b.classList.remove("active"));
+  document.getElementById("preset-" + name).classList.add("active");
+  startAutoSend();
+}
+
+document.getElementById("preset-safe").onclick = () => applyPreset("safe", "Safe Water");
+document.getElementById("preset-moderate").onclick = () => applyPreset("moderate", "Moderate Water");
+document.getElementById("preset-unsafe").onclick = () => applyPreset("unsafe", "Unsafe Water");
+
+/* ============================================================
+   SEND TO BACKEND
+   The backend combines this with its latest MQTT temperature,
+   calculates efficiency, and writes to Firebase — the browser
+   never writes to Firebase directly.
+   ============================================================ */
+function buildPayload() {
+  const payload = {
+    input_tds: getEffectiveInputTds(),
+    output_tds: getEffectiveOutputTds(),
+    flow: getEffectiveFlow(),
+  };
+  // Only include a temperature override when Manual Temperature mode is on -
+  // otherwise the backend uses its own latest MQTT reading.
+  if (manualMode) {
+    payload.temperature = parseFloat(tempManualInput.value) || 0;
+  }
+  return payload;
+}
+
+async function postPayload(payload) {
+  const res = await fetch(`${BACKEND_URL}/api/update`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch (e) {
+    data = null;
+  }
+
+  if (!res.ok) {
+    throw new Error((data && data.error) || `HTTP ${res.status}`);
+  }
+
+  return data;
+}
+
+async function flushPendingUpdate() {
+  const pending = loadPendingUpdate();
+  if (!pending) return;
+
+  try {
+    const data = await postPayload(pending);
+    if (typeof data?.timestamp === "number") lastSeenTimestamp = data.timestamp;
+    updateLastSeen();
+    clearPendingUpdate();
+    toast("Queued manual values synced to Firebase", "ok");
+  } catch (e) {
+    console.warn("Still unable to sync queued manual update:", e.message);
+  }
+}
+
+async function sendToBackend() {
+  const payload = buildPayload();
+  const btn = document.getElementById("btn-send");
+  btn.disabled = true;
+  manualSubmitInFlight = true;
+  try {
+    const data = await postPayload(payload);
+
+    if (typeof data.timestamp === "number") lastSeenTimestamp = data.timestamp;
+    updateLastSeen();
+    clearPendingUpdate();
+    toast("Backend updated Firebase successfully", "ok");
+  } catch (e) {
+    console.error(e);
+    savePendingUpdate(payload);
+    toast("Backend unreachable. Manual values saved and will retry.", "err");
+  } finally {
+    manualSubmitInFlight = false;
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("btn-send").addEventListener("click", sendToBackend);
+
+/* ============================================================
+   AUTO SEND TOGGLE
+   Flips the backend's own Auto Mode (so a live MQTT temperature
+   change keeps updating Firebase on its own) AND keeps sending the
+   current manual values every 5 seconds for continuous demo/preset use.
+   ============================================================ */
+function setBackendAutoMode(enabled) {
+  fetch(`${BACKEND_URL}/api/auto/${enabled ? "on" : "off"}`, { method: "POST" }).catch((e) => {
+    console.warn("Could not reach backend to toggle Auto Mode:", e.message);
+  });
+}
+
+function startAutoSend() {
+  document.getElementById("auto-send").checked = true;
+  setBackendAutoMode(true);
+  sendToBackend();
+  if (!autoSendInterval) {
+    autoSendInterval = setInterval(sendToBackend, 5000);
+  }
+}
+
+function stopAutoSend() {
+  clearInterval(autoSendInterval);
+  autoSendInterval = null;
+  setBackendAutoMode(false);
+  document.getElementById("auto-send").checked = false;
+  document.querySelectorAll(".preset-btn").forEach((b) => b.classList.remove("active"));
+}
+
+document.getElementById("auto-send").addEventListener("change", (e) => {
+  if (e.target.checked) startAutoSend();
+  else stopAutoSend();
+});
+</script>
+</body>
+</html>
