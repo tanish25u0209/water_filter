@@ -105,7 +105,7 @@ function buildCombinedRecord({ input_tds, output_tds, flow, temperature } = {}) 
   const finalInputTds = input_tds ?? state.live.input_tds ?? state.manual.input_tds ?? 0;
   const finalOutputTds = output_tds ?? state.live.output_tds ?? state.manual.output_tds ?? 0;
   const finalFlow = flow ?? state.live.flow ?? state.manual.flow ?? 0;
-  const finalTemperature = temperature !== undefined ? temperature : state.live.temperature ?? 0;
+  const finalTemperature = temperature !== undefined ? temperature : state.live.temperature ?? null;
 
   const record = {
     input_tds: finalInputTds,
